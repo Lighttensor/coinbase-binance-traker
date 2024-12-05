@@ -23,7 +23,7 @@ class DataValidationError(Exception):
     pass
 
 class DataCombiner:
-    """Класс для объединения и обработки рыночных данных от Upbit и Binance"""
+    """Класс для объединения и обработки рыночных данных от coinbase и Binance"""
     
     def __init__(self, server_url: str = 'http://localhost:5000'):
         self.server_url = server_url
@@ -32,14 +32,14 @@ class DataCombiner:
         
         # Требуемые столбцы для проверки
         self.required_columns = {
-            'upbit': {
+            'coinbase': {
                 'market': str,
                 'candle_date_time_utc': str,
                 'opening_price': float,
                 'high_price': float,
                 'low_price': float,
-                'trade_price': float,
-                'candle_acc_trade_volume': float
+                'close_price': float,
+                'volume': float
             },
             'binance': {
                 'market': str,
@@ -48,7 +48,7 @@ class DataCombiner:
                 'high_price': float,
                 'low_price': float,
                 'close_price': float,
-                'volume': float
+                'quote_volume': float
             }
         }
 
@@ -85,17 +85,18 @@ class DataCombiner:
                 logger.warning(f"Found invalid dates in {datetime_column}")
         return df
 
-    def combine_data(self, upbit_file: str, binance_file: str) -> pd.DataFrame:
-        """Combines data from Upbit and Binance"""
+    def combine_data(self, coinbase_file: str, binance_file: str) -> pd.DataFrame:
+        """Combines data from coinbase and Binance"""
         try:
             # Read data files
-            upbit_df = pd.read_csv(upbit_file)
+            coinbase_df = pd.read_csv(coinbase_file)
+            coinbase_df['market'] = coinbase_df['market'].str.replace('-', '') + "T"
             binance_df = pd.read_csv(binance_file)
             
             # Rename columns to avoid conflicts and create required columns
-            upbit_df = upbit_df.rename(columns={
-                'trade_price': 'trade_price_upbit',
-                'candle_acc_trade_volume': 'volume_upbit'
+            coinbase_df = coinbase_df.rename(columns={
+                'close_price': 'close_price_coinbase',
+                'volume': 'volume_coinbase'
             })
             
             binance_df = binance_df.rename(columns={
@@ -104,8 +105,8 @@ class DataCombiner:
             })
             
             # Convert timestamps
-            upbit_df['timestamp_upbit'] = pd.to_datetime(
-                upbit_df['candle_date_time_utc'].str.replace('T', ' ')
+            coinbase_df['timestamp_coinbase'] = pd.to_datetime(
+                coinbase_df['candle_date_time_utc'].str.replace('T', ' ')
             )
             binance_df['timestamp_binance'] = pd.to_datetime(
                 binance_df['candle_date_time_utc']
@@ -113,10 +114,10 @@ class DataCombiner:
             
             # Merge data based on market and time proximity
             merged_data = pd.merge_asof(
-                upbit_df.sort_values('timestamp_upbit'),
+                coinbase_df.sort_values('timestamp_coinbase'),
                 binance_df.sort_values('timestamp_binance'),
                 by='market',
-                left_on='timestamp_upbit',
+                left_on='timestamp_coinbase',
                 right_on='timestamp_binance',
                 direction='nearest',
                 tolerance=pd.Timedelta('5min')
@@ -124,9 +125,9 @@ class DataCombiner:
             
             # Verify required columns exist
             required_columns = [
-                'trade_price_upbit', 
+                'close_price_coinbase', 
                 'close_price_binance', 
-                'volume_upbit', 
+                'volume_coinbase', 
                 'volume_binance'
             ]
             
@@ -136,7 +137,7 @@ class DataCombiner:
             
             # Sort and reset index
             self.processed_data = merged_data.sort_values(
-                by=['market', 'timestamp_upbit']
+                by=['market', 'timestamp_coinbase']
             ).reset_index(drop=True)
             
             return self.processed_data
@@ -163,8 +164,8 @@ class DataCombiner:
         
         # Проверка наличия нужных столбцов
         required_columns = [
-            'market', 'timestamp_upbit', 'timestamp_binance', 
-            'trade_price_upbit', 'close_price_binance', 'volume_upbit', 'volume_binance'
+            'market', 'timestamp_coinbase', 'timestamp_binance', 
+            'close_price_coinbase', 'close_price_binance', 'volume_coinbase', 'volume_binance'
         ]
         
         missing_columns = [col for col in required_columns if col not in df.columns]
@@ -174,12 +175,12 @@ class DataCombiner:
             return pd.DataFrame()  # Возвращаем пустой DataFrame, если данных недостаточно
         
         def calculate_for_group(group):
-            group = group.sort_values('timestamp_upbit')  # Сортировка по времени
-            group = group.set_index('timestamp_upbit')  # Устанавливаем timestamp_upbit как индекс
+            group = group.sort_values('timestamp_coinbase')  # Сортировка по времени
+            group = group.set_index('timestamp_coinbase')  # Устанавливаем timestamp_coinbase как индекс
             
             # Премии
-            group['Upbit Premium'] = group['trade_price_upbit'] - group['close_price_binance']
-            group['Upbit Premium %'] = (group['Upbit Premium'] / group['close_price_binance']) * 100
+            group['Coinbase Premium'] = group['close_price_coinbase'] - group['close_price_binance']
+            group['Coinbase Premium %'] = (group['Coinbase Premium'] / group['close_price_binance']) * 100
             
             # Скользящие метрики
             rolling_intervals = {
@@ -191,8 +192,8 @@ class DataCombiner:
             
             for label, period in rolling_intervals.items():
                 # Используем shift(1) перед расчетом скользящих средних
-                shifted_premium = group['Upbit Premium'].shift(1)
-                shifted_premium_pct = group['Upbit Premium %'].shift(1)
+                shifted_premium = group['Coinbase Premium'].shift(1)
+                shifted_premium_pct = group['Coinbase Premium %'].shift(1)
                 
                 group[f'Avg {label} Premium Diff'] = (
                     shifted_premium
@@ -204,11 +205,11 @@ class DataCombiner:
                     .rolling(window=period, min_periods=1)
                     .mean()
                 )
-                group[f'Current Diff {label}'] = group['Upbit Premium'] - group[f'Avg {label} Premium Diff']
-                group[f'Current % {label}'] = group['Upbit Premium %'] - group[f'Avg {label} Premium %']
+                group[f'Current Diff {label}'] = group['Coinbase Premium'] - group[f'Avg {label} Premium Diff']
+                group[f'Current % {label}'] = group['Coinbase Premium %'] - group[f'Avg {label} Premium %']
             
             # Модифицируем расчет объемов
-            shifted_volume = group['volume_upbit'].shift(1)
+            shifted_volume = group['volume_coinbase'].shift(1)
             
             group['Avg 1H Volume'] = (
                 shifted_volume
@@ -234,18 +235,18 @@ class DataCombiner:
                 .mean()
             )
             
-            group['Upbit Volume Diff %'] = (
-                (group['volume_upbit'] - group['Avg 1H Volume']) / group['Avg 1H Volume'] * 100
+            group['Coinbase Volume Diff %'] = (
+                (group['volume_coinbase'] - group['Avg 1H Volume']) / group['Avg 1H Volume'] * 100
             )
             
             # Перепишем таблицу с нужной структурой
             result = pd.DataFrame({
                 'DateTime': group.index,
                 'Coin': group['market'],
-                'Price @ Upbit': group['trade_price_upbit'],
+                'Price @ Coinbase': group['close_price_coinbase'],
                 'Price @ Binance': group['close_price_binance'],
-            #    'Upbit Premium': group['Upbit Premium'],
-                'Upbit Premium %': group['Upbit Premium %'],
+            #    'coinbase Premium': group['coinbase Premium'],
+                'Coinbase Premium %': group['Coinbase Premium %'],
             #    'Avg 1H Premium Diff': group['Avg 1H Premium Diff'],
                 'Avg 1H Premium %': group['Avg 1H Premium %'],
             #    'Current Diff 1H': group['Current Diff 1H'],
@@ -262,27 +263,27 @@ class DataCombiner:
                 'Avg 1Y Premium %': group['Avg 1Y Premium %'],
              #   'Current Diff 1Y': group['Current Diff 1Y'],
                 'Current % 1Y': group['Current % 1Y'],
-                'Current Volume': group['volume_upbit'],
+                'Current Volume': group['volume_coinbase'],
                 'Avg 1H Volume': group['Avg 1H Volume'],
                 'Avg 24H Volume': group['Avg 24H Volume'],
                 'Avg 1M Volume': group['Avg 1M Volume'],
                 'Avg 1Y Volume': group['Avg 1Y Volume'],  # Добавляем годовой объем
-                'Upbit Volume Diff %': group['Upbit Volume Diff %']
+                'Coinbase Volume Diff %': group['Coinbase Volume Diff %']
             })
             
             return result
 
         # Инициализация итогового DataFrame со всеми колонками, включая новые годовые
         result_df = pd.DataFrame(columns=[
-            'DateTime', 'Coin', 'Price @ Upbit', 'Price @ Binance',
-            'Upbit Premium %', 'Avg 1H Premium %',
+            'DateTime', 'Coin', 'Price @ Coinbase', 'Price @ Binance',
+            'Coinbase Premium %', 'Avg 1H Premium %',
             'Current % 1H', 'Avg 24H Premium %',
             'Current % 24H', 'Avg 1M Premium %',
             'Current % 1M','Avg 1Y Premium %',  
             'Current % 1Y', 'Current Volume', 
             'Avg 1H Volume','Avg 24H Volume', 
             'Avg 1M Volume', 'Avg 1Y Volume', 
-            'Upbit Volume Diff %'
+            'Coinbase Volume Diff %'
         ])
 
         # Применяем функцию к каждой группе по токенам и добавляем к итоговому DataFrame
@@ -297,15 +298,15 @@ class DataCombiner:
             result_df = pd.concat([result_df, group_result], ignore_index=True)
 
         price_columns = [
-            'Price @ Upbit', 'Price @ Binance'
+            'Price @ Coinbase', 'Price @ Binance'
         ]
 
         percentage_columns = [
-            'Upbit Premium %', 'Avg 1H Premium %',
+            'Coinbase Premium %', 'Avg 1H Premium %',
             'Current % 1H', 'Avg 24H Premium %',
             'Current % 24H', 'Avg 1M Premium %',
             'Current % 1M', 'Avg 1Y Premium %',
-            'Current % 1Y', 'Upbit Volume Diff %'
+            'Current % 1Y', 'Coinbase Volume Diff %'
         ]
 
         volume_columns = [
@@ -372,11 +373,11 @@ class DataCombiner:
 
 def main():
     combiner = DataCombiner()
-    upbit_file = "upbit_data.csv"
+    coinbase_file = "coinbase_data.csv"
     binance_file = "binance_data.csv"
 
     # Объединение данных
-    combined_data = combiner.combine_data(upbit_file, binance_file)
+    combined_data = combiner.combine_data(coinbase_file, binance_file)
     
     if not combined_data.empty:
         # Расчет индикаторов
