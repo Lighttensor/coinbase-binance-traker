@@ -349,16 +349,16 @@ class DataCombiner:
         processed_indicators = self._calculate_indicators(self.processed_data)
         processed_indicators.to_csv(file_path, index=False)
 
-# В методе send_to_web_service класса DataCombiner
     async def send_to_web_service(self) -> None:
         """Send last record for each unique coin to web service"""
         if self.processed_data.empty:
             logger.error("No data to send to web service")
             return
         try:
-            # Получаем последнюю строку для каждого уникального коина и удаляем строки с NaN
+            # Получаем последние данные для каждого уникального коина, удаляя дубликаты по времени
             data_to_send = (self.processed_data
-                        .sort_values('DateTime')  # Сортируем по времени
+                        .sort_values(['DateTime', 'Coin'])  # Сортируем по времени и монетам
+                        .drop_duplicates(subset=['Coin', 'DateTime'], keep='last')  # Удаляем дубликаты, оставляя последнюю запись
                         .groupby('Coin')  # Группируем по монетам
                         .last()  # Берем последнюю запись для каждой группы
                         .reset_index()  # Сбрасываем индекс

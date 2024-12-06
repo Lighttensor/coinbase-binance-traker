@@ -8,11 +8,11 @@ class BinanceDataFetcher:
     def __init__(self):
         self.base_url_spot = "https://api.binance.com/api/v3/klines"
         self.all_pairs_data = []
-        # Rate limiting parameters
+        self.start_time = None 
         self.request_window = 1.0  # 1 second window
         self.max_requests_per_second = 1000
         self.request_timestamps = []
-        self.batch_delay = 0.1  # 100ms between batches
+        self.batch_delay = 0.5
 
     async def check_rate_limit(self):
         """Check and control rate limiting"""
@@ -31,83 +31,81 @@ class BinanceDataFetcher:
         # Add current request timestamp
         self.request_timestamps.append(current_time)
 
-    async def fetch_historical_candles(self, session, base_url, pair, start_time, end_time):
-        """Fetch historical candles for a given pair"""
+    async def fetch_historical_candles(self, session, base_url, pair, start_time=None, end_time=None):
+        """Fetch historical candles for a given pair with proper interval handling."""
         pair_for_binance = pair.replace("/", "").replace("-", "")
         all_candles = []
-        current_start = start_time
 
-        while current_start < end_time:
-            current_end = min(current_start + timedelta(days=1), end_time)
-            
+        # Устанавливаем начальные значения времени
+        current_start = start_time or self.start_time or (datetime.now(timezone.utc) - timedelta(days=1))
+        current_end = end_time or datetime.now(timezone.utc)
+
+        while current_start < current_end:
+            # Разбиваем запросы на 1-дневные интервалы (максимальный объем данных за один запрос у Binance)
+            current_batch_end = min(current_start + timedelta(days=1), current_end)
+
             params = {
                 "symbol": pair_for_binance,
                 "interval": "5m",
-                "startTime": int(current_start.timestamp() * 1000),
-                "endTime": int(current_end.timestamp() * 1000),
-                "limit": 1000
+                "startTime": int(current_start.timestamp() * 1000),  # Начало периода в миллисекундах
+                "endTime": int(current_batch_end.timestamp() * 1000),  # Конец периода в миллисекундах
+                "limit": 1000  # Максимум данных за один запрос
             }
 
             try:
-                # Check rate limit before making request
+                # Проверка ограничения скорости запросов
                 await self.check_rate_limit()
-                
+
+                # Выполнение запроса
                 async with session.get(base_url, params=params) as response:
                     if response.status == 200:
                         candles = await response.json()
                         if candles:
                             all_candles.extend(candles)
-                            print(f"Fetched {len(candles)} candles for {pair} from {current_start} to {current_end}")
+                            print(f"Fetched {len(candles)} candles for {pair} from {current_start} to {current_batch_end}")
                         else:
-                            print(f"No data for {pair} from {current_start} to {current_end}")
+                            print(f"No data for {pair} from {current_start} to {current_batch_end}")
                     else:
                         print(f"Error {response.status} fetching data for {pair}")
-                        return None
+                        break
 
             except Exception as e:
                 print(f"Error fetching data for {pair}: {e}")
-                return None
+                break
 
-            current_start = current_end
-            await asyncio.sleep(self.batch_delay)  # Delay between requests
+            # Переходим к следующему интервалу
+            current_start = current_batch_end
+            await asyncio.sleep(self.batch_delay)  # Задержка между запросами
 
         return all_candles if all_candles else None
 
-    async def fetch_pair_data(self, session, pair):
-        """Fetch both spot and perpetual data for a pair"""
-        end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(days=1)
-
+    async def fetch_pair_data(self, session, pair, start_time, end_time):
+        """Fetch data for a specific pair"""
         try:
-            # Fetch spot data
             spot_data = await self.fetch_historical_candles(
                 session, self.base_url_spot, pair, start_time, end_time
             )
-
+            
             if spot_data:
                 processed_data = []
+                for candle in spot_data:
+                    processed_candle = {
+                        "market": pair,
+                        "candle_date_time_utc": datetime.utcfromtimestamp(candle[0]/1000).strftime('%Y-%m-%d %H:%M:%S'),
+                        "opening_price": float(candle[1]),
+                        "high_price": float(candle[2]),
+                        "low_price": float(candle[3]),
+                        "close_price": float(candle[4]),
+                        "volume": float(candle[5]),
+                        "quote_volume": float(candle[7]),
+                        "market_type": "spot"
+                    }
+                    processed_data.append(processed_candle)
                 
-                if spot_data:
-                    for candle in spot_data:
-                        processed_candle = {
-                            "market": pair,
-                            "candle_date_time_utc": datetime.utcfromtimestamp(candle[0]/1000).strftime('%Y-%m-%d %H:%M:%S'),
-                            "opening_price": float(candle[1]),
-                            "high_price": float(candle[2]),
-                            "low_price": float(candle[3]),
-                            "close_price": float(candle[4]),
-                            "volume": float(candle[5]),
-                            "quote_volume": float(candle[7]),
-                            "market_type": "spot"
-                        }
-                        processed_data.append(processed_candle)
-
                 self.all_pairs_data.extend(processed_data)
-                #print(self.all_pairs_data)
                 return processed_data
-
         except Exception as e:
-            raise e
+            #logging.error(f"Error fetching data for {pair}: {e}")
             return None
 
     async def fetch_current_data(self, session, pair):
@@ -125,18 +123,17 @@ class BinanceDataFetcher:
 
     async def fetch_all_pairs(self, pairs):
         """Fetch data for all pairs"""
-        batch_size = 5  # Process pairs in smaller batches
+        end_time = datetime.now(timezone.utc)
+        start_time = self.start_time if self.start_time else (end_time - timedelta(days=1))
+        
+        batch_size = 5
         async with aiohttp.ClientSession() as session:
             for i in range(0, len(pairs), batch_size):
                 batch = pairs[i:i + batch_size]
-                tasks = [self.fetch_pair_data(session, pair) for pair in batch]
-                # сохранять данные!!!!
+                tasks = [self.fetch_pair_data(session, pair, start_time, end_time) for pair in batch]
                 results = await asyncio.gather(*tasks)
                 valid_results = [r for r in results if r is not None]
-                
-                # Delay between batches
                 await asyncio.sleep(self.batch_delay)
-                print(f"Processed batch {i//batch_size + 1}/{len(pairs)//batch_size + 1}")
 
             return [r for r in results if r is not None]
 
