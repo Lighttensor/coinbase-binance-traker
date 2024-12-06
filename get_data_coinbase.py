@@ -5,29 +5,30 @@ from datetime import datetime, timezone, timedelta
 import time
 
 class CoinbaseDataFetcher:
-    def __init__(self):
+    def __init__(self, target_pairs):
         self.base_url = "https://api.exchange.coinbase.com/products"
         self.all_pairs_data = []
         self.request_window = 1.0
         self.max_requests_per_second = 10
         self.request_timestamps = []
         self.batch_delay = 0.2
+        self.target_pairs = target_pairs  # Список требуемых пар
 
     async def get_available_pairs(self, session):
-        """Fetch all available trading pairs from Coinbase"""
+        """Fetch all available spot trading pairs from Coinbase"""
         try:
             async with session.get(self.base_url) as response:
                 if response.status == 200:
                     products = await response.json()
-                    # Filter for USD pairs and status 'online'
-                    usd_pairs = [
+                    # Filter for USD pairs, status 'online', and not disabled
+                    spot_pairs = [
                         product['id'] for product in products 
-                        if product['quote_currency'] == 'USD' 
-                        and product['status'] == 'online'
-                        and product['trading_disabled'] is False
+                        if product['quote_currency'] == 'USD'  # Only USD pairs
+                        and product['status'] == 'online'  # The pair should be online
+                        and product['trading_disabled'] is False  # Trading should not be disabled
                     ]
-                    print(f"Found {len(usd_pairs)} USD trading pairs")
-                    return usd_pairs
+                    print(f"Found {len(spot_pairs)} spot USD trading pairs")
+                    return spot_pairs
                 else:
                     print(f"Error fetching available pairs: {response.status}")
                     return []
@@ -97,7 +98,6 @@ class CoinbaseDataFetcher:
             candles = await self.fetch_historical_candles(
                 session, pair, start_time, end_time
             )
-
             if candles:
                 processed_data = []
                 for candle in candles:
@@ -121,26 +121,33 @@ class CoinbaseDataFetcher:
             return None
 
     async def fetch_all_pairs(self):
-        """Fetch data for all available pairs"""
+        """Fetch data for specified pairs"""
         async with aiohttp.ClientSession() as session:
-            # First, get all available pairs
+            # First, get all available spot trading pairs
             available_pairs = await self.get_available_pairs(session)
             if not available_pairs:
-                print("No trading pairs found")
+                print("No spot trading pairs found")
                 return
             
-            print(f"Starting to fetch data for {len(available_pairs)} pairs")
+            # Filter available pairs to only include those in the target list
+            filtered_pairs = [pair for pair in available_pairs if pair in self.target_pairs]
+            
+            if not filtered_pairs:
+                print("None of the target pairs are available on Coinbase")
+                return
+
+            print(f"Starting to fetch data for {len(filtered_pairs)} target pairs")
             
             # Process pairs in batches
             batch_size = 3
-            for i in range(0, len(available_pairs), batch_size):
-                batch = available_pairs[i:i + batch_size]
+            for i in range(0, len(filtered_pairs), batch_size):
+                batch = filtered_pairs[i:i + batch_size]
                 tasks = [self.fetch_pair_data(session, pair) for pair in batch]
                 results = await asyncio.gather(*tasks)
                 valid_results = [r for r in results if r is not None]
                 
                 await asyncio.sleep(self.batch_delay)
-                print(f"Processed batch {i//batch_size + 1}/{len(available_pairs)//batch_size + 1}")
+                print(f"Processed batch {i//batch_size + 1}/{len(filtered_pairs)//batch_size + 1}")
 
     def save_to_csv(self):
         """Save collected data to CSV"""
@@ -164,11 +171,12 @@ class CoinbaseDataFetcher:
         else:
             print("No data to save")
 
-    def run(self):
+    async def run(self):
         """Main execution method"""
-        asyncio.run(self.fetch_all_pairs())
+        await self.fetch_all_pairs()
         self.save_to_csv()
 
 if __name__ == "__main__":
-    fetcher = CoinbaseDataFetcher()
-    fetcher.run()
+    target_pairs = ['SNT-USD', 'QTUM-USD', 'BTC-USD', 'ETC-USD', 'NEO-USD', 'MTL-USD', 'ETH-USD', 'STEEM-USD', 'XRP-USD', 'XLM-USD', 'ARK-USD', 'ADA-USD', 'STORJ-USD', 'LSK-USD', 'SC-USD', 'TRX-USD', 'EOS-USD', 'ICX-USD', 'POWR-USD', 'POLYX-USD', 'ONT-USD', 'BAT-USD', 'ZIL-USD', 'ZRX-USD', 'BCH-USD', 'CVC-USD', 'IOTA-USD', 'IOST-USD', 'KNC-USD', 'ONG-USD', 'GAS-USD', 'HIFI-USD', 'MANA-USD', 'BSV-USD', 'THETA-USD', 'HBAR-USD', 'ANKR-USD', 'WAXP-USD', 'ATOM-USD', 'AERGO-USD', 'STPT-USD', 'CHZ-USD', 'ORBS-USD', 'VET-USD', 'STMX-USD', 'XTZ-USD', 'LINK-USD', 'KAVA-USD', 'SXP-USD', 'STRAX-USD', 'DOT-USD', 'TON-USD', 'FLOW-USD', 'SAND-USD', 'DOGE-USD', 'GLM-USD', 'STX-USD', 'POL-USD', 'SOL-USD', 'AXS-USD', '1INCH-USD', 'AVAX-USD', 'NEAR-USD', 'ALGO-USD', 'AAVE-USD', 'T-USD', 'ARB-USD', 'GMT-USD', 'CELO-USD', 'SUI-USD', 'EGLD-USD', 'APT-USD', 'GRT-USD', 'MASK-USD', 'SEI-USD', 'ID-USD', 'IMX-USD', 'BLUR-USD', 'MINA-USD', 'ZETA-USD', 'AUCTION-USD', 'AKT-USD', 'ASTR-USD', 'PYTH-USD', 'ENS-USD', 'JUP-USD', 'ONDO-USD', 'ZRO-USD', 'STG-USD', 'UXLINK-USD', 'BIGTIME-USD', 'PENDLE-USD', 'USDC-USD', 'G-USD', 'UNI-USD', 'W-USD', 'INJ-USD', 'MEW-USD', 'CKB-USD', 'DRIFT-USD', 'AGLD-USD', 'SAFE-USD', 'XEM-USD', 'WAVES-USD', 'LOOM-USD']
+    fetcher = CoinbaseDataFetcher(target_pairs)
+    asyncio.run(fetcher.run())

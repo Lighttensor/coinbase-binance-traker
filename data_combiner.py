@@ -35,18 +35,18 @@ class DataCombiner:
             'coinbase': {
                 'market': str,
                 'candle_date_time_utc': str,
-                'opening_price': float,
-                'high_price': float,
-                'low_price': float,
+            #    'opening_price': float,
+            #    'high_price': float,
+            #    'low_price': float,
                 'close_price': float,
                 'volume': float
             },
             'binance': {
                 'market': str,
                 'candle_date_time_utc': str,
-                'opening_price': float,
-                'high_price': float,
-                'low_price': float,
+            #    'opening_price': float,
+            #    'high_price': float,
+            #    'low_price': float,
                 'close_price': float,
                 'quote_volume': float
             }
@@ -90,7 +90,8 @@ class DataCombiner:
         try:
             # Read data files
             coinbase_df = pd.read_csv(coinbase_file)
-            coinbase_df['market'] = coinbase_df['market'].str.replace('-', '') + "T"
+            coinbase_df['market'] = coinbase_df['market'].str.replace('-', '') + 'T'
+            #print(coinbase_df.head(3))
             binance_df = pd.read_csv(binance_file)
             
             # Rename columns to avoid conflicts and create required columns
@@ -98,20 +99,24 @@ class DataCombiner:
                 'close_price': 'close_price_coinbase',
                 'volume': 'volume_coinbase'
             })
-            
+            coinbase_df = coinbase_df.drop(columns = ['opening_price', 'high_price', 'low_price', 'market_type'])
+            #print(coinbase_df.head(3))
             binance_df = binance_df.rename(columns={
                 'close_price': 'close_price_binance',
                 'quote_volume': 'volume_binance'
             })
-            
+            binance_df = binance_df.drop(columns = ['opening_price', 'volume', 'high_price', 'low_price', 'market_type'])
+            binance_df['market'] = binance_df['market'].replace('/', '', regex=True)
+            #print(binance_df.head(3))
             # Convert timestamps
             coinbase_df['timestamp_coinbase'] = pd.to_datetime(
-                coinbase_df['candle_date_time_utc'].str.replace('T', ' ')
+                coinbase_df['candle_date_time_utc']
             )
+            #print(coinbase_df.columns)
             binance_df['timestamp_binance'] = pd.to_datetime(
                 binance_df['candle_date_time_utc']
             )
-            
+            #print(binance_df.columns)
             # Merge data based on market and time proximity
             merged_data = pd.merge_asof(
                 coinbase_df.sort_values('timestamp_coinbase'),
@@ -122,6 +127,7 @@ class DataCombiner:
                 direction='nearest',
                 tolerance=pd.Timedelta('5min')
             )
+            print(merged_data)
             
             # Verify required columns exist
             required_columns = [
