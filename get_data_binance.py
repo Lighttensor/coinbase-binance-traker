@@ -6,7 +6,7 @@ import time
 
 class BinanceDataFetcher:
     def __init__(self):
-        self.base_url_perp = "https://fapi.binance.com/fapi/v1/klines"
+        self.base_url_spot = "https://api.binance.com/api/v3/klines"
         self.all_pairs_data = []
         # Rate limiting parameters
         self.request_window = 1.0  # 1 second window
@@ -79,26 +79,26 @@ class BinanceDataFetcher:
         start_time = end_time - timedelta(days=1)
 
         try:
-            # Fetch perpetual data
-            perp_data = await self.fetch_historical_candles(
-                session, self.base_url_perp, pair, start_time, end_time
+            # Fetch spot data
+            spot_data = await self.fetch_historical_candles(
+                session, self.base_url_spot, pair, start_time, end_time
             )
 
-            if perp_data:
+            if spot_data:
                 processed_data = []
                 
-                if perp_data:
-                    for candle in perp_data:
+                if spot_data:
+                    for candle in spot_data:
                         processed_candle = {
                             "market": pair,
-                            "candle_date_time_utc": datetime.utcfromtimestamp(candle[0] / 1000).strftime('%Y-%m-%d %H:%M:%S'),
+                            "candle_date_time_utc": datetime.utcfromtimestamp(candle[0]/1000).strftime('%Y-%m-%d %H:%M:%S'),
                             "opening_price": float(candle[1]),
                             "high_price": float(candle[2]),
                             "low_price": float(candle[3]),
                             "close_price": float(candle[4]),
                             "volume": float(candle[5]),
                             "quote_volume": float(candle[7]),
-                            "market_type": "perpetual"
+                            "market_type": "spot"
                         }
                         processed_data.append(processed_candle)
 
@@ -114,12 +114,14 @@ class BinanceDataFetcher:
         """Fetch current data (e.g., last 5 minutes)"""
         end_time = datetime.now(timezone.utc)
         start_time = end_time - timedelta(minutes=5)  # последние 5 минут
-        
-        perp_data = await self.fetch_historical_candles(
-            session, self.base_url_perp, pair, start_time, end_time
+
+        # Запрос текущих данных для пары
+        spot_data = await self.fetch_historical_candles(
+            session, self.base_url_spot, pair, start_time, end_time
         )
+
         # Возвращаем собранные данные
-        return perp_data
+        return spot_data
 
     async def fetch_all_pairs(self, pairs):
         """Fetch data for all pairs"""
@@ -160,13 +162,14 @@ class BinanceDataFetcher:
         else:
             print("No data to save")
 
-    async def run(self, pairs):
+    def run(self, pairs):
         """Main execution method"""
-        await self.fetch_all_pairs(pairs)
+        asyncio.run(self.fetch_all_pairs(pairs))
         self.save_to_csv()
 
 # Пример использования
 if __name__ == "__main__":
-    pairs = ['STG/USDT', 'ZETA/USDT', 'APT/USDT', 'EOS/USDT', '1INCH/USDT', 'AVAX/USDT', 'XTZ/USDT', 'SOL/USDT', 'ZRO/USDT', 'ONDO/USDT', 'KNC/USDT', 'KAVA/USDT', 'UNI/USDT', 'ZRX/USDT', 'CHZ/USDT', 'ENS/USDT', 'BTC/USDT', 'GLM/USDT', 'HBAR/USDT', 'AUCTION/USDT', 'SEI/USDT', 'BLUR/USDT', 'BIGTIME/USDT', 'ADA/USDT', 'IMX/USDT', 'XLM/USDT', 'BCH/USDT', 'AGLD/USDT', 'AKT/USDT', 'DOGE/USDT', 'NEAR/USDT', 'ETC/USDT', 'STORJ/USDT', 'INJ/USDT', 'AAVE/USDT', 'LINK/USDT', 'ANKR/USDT', 'ATOM/USDT', 'ALGO/USDT', 'G/USDT', 'CVC/USDT', 'DOT/USDT', 'ETH/USDT', 'BAT/USDT', 'ARB/USDT', 'STX/USDT', 'VET/USDT', 'XRP/USDT', 'AERGO/USDT', 'SUI/USDT', 'SAFE/USDT', 'EGLD/USDT', 'SAND/USDT', 'MASK/USDT', 'FLOW/USDT', 'GMT/USDT', 'POWR/USDT', 'POL/USDT', 'AXS/USDT', 'MINA/USDT', 'T/USDT', 'GRT/USDT', 'DRIFT/USDT', 'MANA/USDT']
+    pairs = ['BLZ/USDT', 'STG/USDT', 'IO/USDT', 'UMA/USDT', 'SAND/USDT', 'MANA/USDT', 'OP/USDT', 'PYR/USDT', 'CHZ/USDT', 'ZK/USDT', 'ZRO/USDT', 'BNT/USDT', 'ORCA/USDT', 'POWR/USDT', 'PERP/USDT', 'FIL/USDT', 'SEI/USDT', 'RONIN/USDT', 'VOXEL/USDT', 'PUNDIX/USDT', 'ADA/USDT', 'SUPER/USDT', 'SUI/USDT', 'ANKR/USDT', 'GHST/USDT', 'EIGEN/USDT', 'SOL/USDT', 'ALGO/USDT', 'AUDIO/USDT', 'BICO/USDT', 'JASMY/USDT', 'MINA/USDT', 'MLN/USDT', 'INJ/USDT', 'IOTX/USDT', 'AAVE/USDT', 'TRB/USDT', 'AMP/USDT', 'STX/USDT', 'STRK/USDT', 'DAR/USDT', 'COMP/USDT', 'METIS/USDT', 'MKR/USDT', 'ARKM/USDT', 'BONK/USDT', 'DASH/USDT', 'XLM/USDT', 'EOS/USDT', 'XTZ/USDT', 'KAVA/USDT', 'AUCTION/USDT', 'BLUR/USDT', 'LRC/USDT', 'RENDER/USDT', 'UNI/USDT', 'XRP/USDT', 'HIGH/USDT', 'LTC/USDT', 'WIF/USDT', 'ALICE/USDT', 'MDT/USDT', 'RLC/USDT', 'ETH/USDT', 'AXS/USDT', 'ICP/USDT', 'OMNI/USDT', 'TRU/USDT', 'HFT/USDT', 'REQ/USDT', 'KNC/USDT', 'FLOW/USDT', 'LPT/USDT', 'GNO/USDT', 'PEPE/USDT', 'ARB/USDT', 'POND/USDT', 'KSM/USDT', 'AGLD/USDT', 'QNT/USDT', 'FORTH/USDT', 'BAL/USDT', 'GLM/USDT', 'YFI/USDT', 'ZEN/USDT', 'MASK/USDT', 'ZRX/USDT', 'COTI/USDT', 'CLV/USDT', 'C98/USDT', 'SKL/USDT', 'LINK/USDT', 'LOKA/USDT', 'ZEC/USDT', 'ALCX/USDT', 'FARM/USDT', 'RPL/USDT', 'SPELL/USDT', 'DOGE/USDT', 'FLOKI/USDT', 'ERN/USDT', 'VET/USDT', 'FIDA/USDT', 'HBAR/USDT', 'ATOM/USDT', 'ROSE/USDT', 'ACX/USDT', 'SYN/USDT', 'TIA/USDT', 'DIA/USDT', 'FET/USDT', 'RARE/USDT', 'CVX/USDT', 'SHIB/USDT', 'NEAR/USDT', 'IMX/USDT', 'CELR/USDT', 'BAT/USDT', 'MAGIC/USDT', 'API3/USDT', 'T/USDT', 'CTSI/USDT', 'BAND/USDT', 'ENS/USDT', 'GMT/USDT', 'QI/USDT', 'LIT/USDT', 'RAD/USDT', 'G/USDT', 'NMR/USDT', 'IDEX/USDT', 'WBTC/USDT', 'COW/USDT', 'GTC/USDT', 'AERGO/USDT', 'ILV/USDT', 'AST/USDT', 'ARPA/USDT', 'DOT/USDT', 'CRV/USDT', 'ETC/USDT', 'JTO/USDT', 'APT/USDT', 'SNX/USDT', 'EGLD/USDT', 'BADGER/USDT', 'STORJ/USDT', 'CVC/USDT', 'OGN/USDT', 'VTHO/USDT', 'APE/USDT', 'AVAX/USDT', 'OSMO/USDT', 'GRT/USDT', 'ACH/USDT', 'BTC/USDT', 'TNSR/USDT', '1INCH/USDT', 'LQTY/USDT', 'AXL/USDT', 'OXT/USDT', 'FIS/USDT', 'LDO/USDT', 'POL/USDT', 'BCH/USDT', 'SUSHI/USDT', 'NKN/USDT']
+ 
     fetcher = BinanceDataFetcher()
-    asyncio.run(fetcher.run(pairs))
+    fetcher.run(pairs)
