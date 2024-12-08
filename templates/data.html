@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Market Data</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f2f5;
+        }
+        
+        .container {
+            max-width: 100%;
+            overflow-x: auto;
+        }
+        
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            background-color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: right;
+            border: 1px solid #ddd;
+            white-space: nowrap;
+        }
+        
+        th {
+            background-color: #f8f9fa;
+            cursor: pointer;
+            position: sticky;
+            top: 0;
+        }
+        
+        th:hover {
+            background-color: #e9ecef;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        
+        tr:hover {
+            background-color: #f2f2f2;
+        }
+        
+        .positive {
+            color: green;
+        }
+        
+        .negative {
+            color: red;
+        }
+        
+        .update-time {
+            margin-bottom: 20px;
+            color: #666;
+        }
+        
+        /* Стиль для стрелок сортировки */
+        th::after {
+            content: '↕';
+            margin-left: 5px;
+            opacity: 0.3;
+        }
+        
+        th.asc::after {
+            content: '↑';
+            opacity: 1;
+        }
+        
+        th.desc::after {
+            content: '↓';
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="update-time">Last Update: {{ last_update }}</div>
+        <table id="dataTable">
+            <thead>
+                <tr>
+                    <th onclick="sortTable(0)">DateTime</th>
+                    <th onclick="sortTable(1)">Coin</th>
+                    <th onclick="sortTable(2)">Price @ Coinbase</th>
+                    <th onclick="sortTable(3)">Price @ Binance</th>
+                    <th onclick="sortTable(4)">Coinbase Premium %</th>
+                    <th onclick="sortTable(5)">Avg 1H Premium %</th>
+                    <th onclick="sortTable(6)">Current % 1H</th>
+                    <th onclick="sortTable(7)">Avg 24H Premium %</th>
+                    <th onclick="sortTable(8)">Current % 24H</th>
+                    <th onclick="sortTable(9)">Avg 1M Premium %</th>
+                    <th onclick="sortTable(10)">Current % 1M</th>
+                    <th onclick="sortTable(11)">Avg 1Y Premium %</th>
+                    <th onclick="sortTable(12)">Current % 1Y</th>
+                    <th onclick="sortTable(13)">Current Volume</th>
+                    <th onclick="sortTable(14)">Avg 1H Volume</th>
+                    <th onclick="sortTable(15)">Avg 24H Volume</th>
+                    <th onclick="sortTable(16)">Avg 1M Volume</th>
+                    <th onclick="sortTable(17)">Avg 1Y Volume</th>
+                    <th onclick="sortTable(18)">Coinbase Volume Diff %</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in data %}
+                <tr>
+                    <td>{{ row['DateTime'] }}</td>
+                    <td>{{ row['Coin'] }}</td>
+                    <td>{{ row['Price @ Coinbase'] }}</td>
+                    <td>{{ row['Price @ Binance'] }}</td>
+                    <td class="{{ 'positive' if row['Coinbase Premium %'] > 0 else 'negative' }}">
+                        {{ "%.2f"|format(row['Coinbase Premium %']) }}
+                    </td>
+                    <td class="{{ 'positive' if row['Avg 1H Premium %'] > 0 else 'negative' }}">
+                        {{ "%.2f"|format(row['Avg 1H Premium %']) }}
+                    </td>
+                    <td class="{{ 'positive' if row['Current % 1H'] > 0 else 'negative' }}">
+                        {{ "%.2f"|format(row['Current % 1H']) }}
+                    </td>
+                    <td class="{{ 'positive' if row['Avg 24H Premium %'] > 0 else 'negative' }}">
+                        {{ "%.2f"|format(row['Avg 24H Premium %']) }}
+                    </td>
+                    <td class="{{ 'positive' if row['Current % 24H'] > 0 else 'negative' }}">
+                        {{ "%.2f"|format(row['Current % 24H']) }}
+                    </td>
+                    <td class="{{ 'positive' if row['Avg 1M Premium %'] > 0 else 'negative' }}">
+                        {{ "%.2f"|format(row['Avg 1M Premium %']) }}
+                    </td>
+                    <td class="{{ 'positive' if row['Current % 1M'] > 0 else 'negative' }}">
+                        {{ "%.2f"|format(row['Current % 1M']) }}
+                    </td>
+                    <td class="{{ 'positive' if row['Avg 1Y Premium %'] > 0 else 'negative' }}">
+                        {{ "%.2f"|format(row['Avg 1Y Premium %']) }}
+                    </td>
+                    <td class="{{ 'positive' if row['Current % 1Y'] > 0 else 'negative' }}">
+                        {{ "%.2f"|format(row['Current % 1Y']) }}
+                    </td>
+                    <td>{{ row['Current Volume'] }}</td>
+                    <td>{{ row['Avg 1H Volume'] }}</td>
+                    <td>{{ row['Avg 24H Volume'] }}</td>
+                    <td>{{ row['Avg 1M Volume'] }}</td>
+                    <td>{{ row['Avg 1Y Volume'] }}</td>
+                    <td class="{{ 'positive' if row['Coinbase Volume Diff %'] > 0 else 'negative' }}">
+                        {{ "%.2f"|format(row['Coinbase Volume Diff %']) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        function convertVolumeToNumber(volume) {
+            if (!volume) return 0;
+            
+            volume = volume.toString().trim().toUpperCase();
+            
+            // Если число без суффикса
+            if (volume.match(/^[\d.]+$/)) {
+                return parseFloat(volume);
+            }
+            
+            // Получаем число и суффикс
+            const number = parseFloat(volume.slice(0, -1));
+            const suffix = volume.slice(-1);
+            
+            // Конвертируем в зависимости от суффикса
+            switch(suffix) {
+                case 'K': return number * 1000;
+                case 'M': return number * 1000000;
+                case 'B': return number * 1000000000;
+                default: return parseFloat(volume);
+            }
+        }
+
+        function sortTable(columnIndex) {
+            const table = document.getElementById('dataTable');
+            const header = table.getElementsByTagName('th')[columnIndex];
+            const tbody = table.getElementsByTagName('tbody')[0];
+            const rows = Array.from(tbody.getElementsByTagName('tr'));
+            
+            // Определяем направление сортировки
+            const isAsc = !header.classList.contains('asc');
+            
+            // Очищаем классы сортировки у всех заголовков
+            table.querySelectorAll('th').forEach(th => {
+                th.classList.remove('asc', 'desc');
+            });
+            
+            // Устанавливаем класс текущему заголовку
+            header.classList.add(isAsc ? 'asc' : 'desc');
+            
+            rows.sort((a, b) => {
+                let aValue = a.cells[columnIndex].textContent.trim();
+                let bValue = b.cells[columnIndex].textContent.trim();
+                
+                // Для столбцов с объемами (индексы 13-17)
+                if (columnIndex >= 13 && columnIndex <= 17) {
+                    aValue = convertVolumeToNumber(aValue);
+                    bValue = convertVolumeToNumber(bValue);
+                    return isAsc ? aValue - bValue : bValue - aValue;
+                }
+                
+                // Для числовых столбцов
+                if (!isNaN(parseFloat(aValue)) && !isNaN(parseFloat(bValue))) {
+                    return isAsc ? 
+                        parseFloat(aValue) - parseFloat(bValue) : 
+                        parseFloat(bValue) - parseFloat(aValue);
+                }
+                
+                // Для текстовых столбцов
+                return isAsc ? 
+                    aValue.localeCompare(bValue) : 
+                    bValue.localeCompare(aValue);
+            });
+            
+            // Обновляем таблицу
+            rows.forEach(row => tbody.appendChild(row));
+        }
+    </script>
+</body>
+</html>
