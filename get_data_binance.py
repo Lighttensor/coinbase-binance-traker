@@ -64,6 +64,7 @@ class BinanceDataFetcher:
                             all_candles.extend(candles)
                             print(f"Fetched {len(candles)} candles for {pair} from {current_start} to {current_batch_end}")
                         else:
+                            print(candles)
                             print(f"No data for {pair} from {current_start} to {current_batch_end}")
                     else:
                         print(f"Error {response.status} fetching data for {pair}")
@@ -79,8 +80,14 @@ class BinanceDataFetcher:
 
         return all_candles if all_candles else None
 
-    async def fetch_pair_data(self, session, pair, start_time, end_time):
+    # Modified fetch_pair_data method in BinanceDataFetcher
+    async def fetch_pair_data(self, session, pair, start_time=None, end_time=None):
         """Fetch data for a specific pair"""
+        if not end_time:
+            end_time = datetime.now(timezone.utc)
+        if not start_time:
+            start_time = end_time - timedelta(days=1)
+
         try:
             spot_data = await self.fetch_historical_candles(
                 session, self.base_url_spot, pair, start_time, end_time
@@ -89,9 +96,11 @@ class BinanceDataFetcher:
             if spot_data:
                 processed_data = []
                 for candle in spot_data:
+                    # Убедимся, что временная метка имеет UTC
+                    candle_time = datetime.fromtimestamp(candle[0]/1000, tz=timezone.utc)
                     processed_candle = {
                         "market": pair,
-                        "candle_date_time_utc": datetime.utcfromtimestamp(candle[0]/1000).strftime('%Y-%m-%d %H:%M:%S'),
+                        "candle_date_time_utc": candle_time.strftime('%Y-%m-%d %H:%M:%S'),
                         "opening_price": float(candle[1]),
                         "high_price": float(candle[2]),
                         "low_price": float(candle[3]),
@@ -105,7 +114,7 @@ class BinanceDataFetcher:
                 self.all_pairs_data.extend(processed_data)
                 return processed_data
         except Exception as e:
-            #logging.error(f"Error fetching data for {pair}: {e}")
+            print(f"Error fetching data for {pair}: {e}")
             return None
 
     async def fetch_current_data(self, session, pair):
@@ -121,21 +130,21 @@ class BinanceDataFetcher:
         # Возвращаем собранные данные
         return spot_data
 
-    async def fetch_all_pairs(self, pairs):
+    async def fetch_all_pairs(self, pairs, start_time=None, end_time=None):
         """Fetch data for all pairs"""
-        end_time = datetime.now(timezone.utc)
-        start_time = self.start_time if self.start_time else (end_time - timedelta(days=1))
+        if not end_time:
+            end_time = datetime.now(timezone.utc)
+        if not start_time:
+            start_time = end_time - timedelta(days=365) # Determine start of the historical period (default 365 d)
         
         batch_size = 5
         async with aiohttp.ClientSession() as session:
             for i in range(0, len(pairs), batch_size):
                 batch = pairs[i:i + batch_size]
-                tasks = [self.fetch_pair_data(session, pair, start_time, end_time) for pair in batch]
+                tasks = [self.fetch_pair_data(session, pair, start_time, end_time) 
+                        for pair in batch]
                 results = await asyncio.gather(*tasks)
-                valid_results = [r for r in results if r is not None]
                 await asyncio.sleep(self.batch_delay)
-
-            return [r for r in results if r is not None]
 
     def save_to_csv(self):
         """Save the collected data to CSV"""

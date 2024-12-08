@@ -81,6 +81,7 @@ class CoinbaseDataFetcher:
                                 all_candles.extend(candles)
                                 print(f"Fetched {len(candles)} candles for {pair} from {current_start} to {current_end}")
                             else:
+                                print(candles)
                                 print(f"No data for {pair} from {current_start} to {current_end}")
                             break  # Успешный запрос, выходим из попыток
                         else:
@@ -103,10 +104,12 @@ class CoinbaseDataFetcher:
 
         return all_candles if all_candles else None
 
-    async def fetch_pair_data(self, session, pair):
+    async def fetch_pair_data(self, session, pair, start_time=None, end_time=None):
         """Process data for a single pair"""
-        end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(days=1)
+        if not end_time:
+            end_time = datetime.now(timezone.utc)
+        if not start_time:
+            start_time = end_time - timedelta(days=1)
 
         try:
             candles = await self.fetch_historical_candles(
@@ -115,9 +118,11 @@ class CoinbaseDataFetcher:
             if candles:
                 processed_data = []
                 for candle in candles:
+                    # Убедимся, что временная метка имеет UTC
+                    candle_time = datetime.fromtimestamp(candle[0], tz=timezone.utc)
                     processed_candle = {
                         "market": pair,
-                        "candle_date_time_utc": datetime.utcfromtimestamp(candle[0]).strftime('%Y-%m-%d %H:%M:%S'),
+                        "candle_date_time_utc": candle_time.strftime('%Y-%m-%d %H:%M:%S'),
                         "opening_price": float(candle[3]),
                         "high_price": float(candle[2]),
                         "low_price": float(candle[1]),
@@ -134,16 +139,20 @@ class CoinbaseDataFetcher:
             print(f"Error processing data for {pair}: {e}")
             return None
 
-    async def fetch_all_pairs(self):
+
+    async def fetch_all_pairs(self, start_time=None, end_time=None):
         """Fetch data for specified pairs"""
+        if not end_time:
+            end_time = datetime.now(timezone.utc)
+        if not start_time:
+            start_time = end_time - timedelta(days=365) # Determine start of the historical period (default 365 d)
+
         async with aiohttp.ClientSession() as session:
-            # First, get all available spot trading pairs
             available_pairs = await self.get_available_pairs(session)
             if not available_pairs:
                 print("No spot trading pairs found")
                 return
             
-            # Filter available pairs to only include those in the target list
             filtered_pairs = [pair for pair in available_pairs if pair in self.target_pairs]
             
             if not filtered_pairs:
@@ -152,16 +161,14 @@ class CoinbaseDataFetcher:
 
             print(f"Starting to fetch data for {len(filtered_pairs)} target pairs")
             
-            # Process pairs in batches
             batch_size = 3
             for i in range(0, len(filtered_pairs), batch_size):
                 batch = filtered_pairs[i:i + batch_size]
-                tasks = [self.fetch_pair_data(session, pair) for pair in batch]
+                tasks = [self.fetch_pair_data(session, pair, start_time, end_time) 
+                        for pair in batch]
                 results = await asyncio.gather(*tasks)
-                valid_results = [r for r in results if r is not None]
                 
                 await asyncio.sleep(self.batch_delay)
-                print(f"Processed batch {i//batch_size + 1}/{len(filtered_pairs)//batch_size + 1}")
 
     def save_to_csv(self):
         """Save collected data to CSV"""
