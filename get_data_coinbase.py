@@ -145,7 +145,7 @@ class CoinbaseDataFetcher:
         if not end_time:
             end_time = datetime.now(timezone.utc)
         if not start_time:
-            start_time = end_time - timedelta(days=365) # Determine start of the historical period (default 365 d)
+            start_time = end_time - timedelta(days=1) # Determine start of the historical period (default 365 d)
 
         async with aiohttp.ClientSession() as session:
             available_pairs = await self.get_available_pairs(session)
@@ -196,4 +196,3 @@ class CoinbaseDataFetcher:
         """Main execution method"""
         await self.fetch_all_pairs()
         self.save_to_csv()
-
