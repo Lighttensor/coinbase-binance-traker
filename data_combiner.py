@@ -195,52 +195,52 @@ class DataCombiner:
             }
             
             for label, period in rolling_intervals.items():
-                # Используем shift(1) перед расчетом скользящих средних
-                shifted_premium = group['Coinbase Premium'].shift(1)
-                shifted_premium_pct = group['Coinbase Premium %'].shift(1)
+                # Используем shift(-1) перед расчетом скользящих средних
+                shifted_premium = group['Coinbase Premium'].shift(-1)
+                shifted_premium_pct = group['Coinbase Premium %'].shift(-1)
                 
                 group[f'Avg {label} Premium Diff'] = (
                     shifted_premium
                     .rolling(window=period, min_periods=1)
-                    .mean()
+                    .median()
                 )
                 group[f'Avg {label} Premium %'] = (
                     shifted_premium_pct
                     .rolling(window=period, min_periods=1)
-                    .mean()
+                    .median()
                 )
                 group[f'Current Diff {label}'] = group['Coinbase Premium'] - group[f'Avg {label} Premium Diff']
                 group[f'Current % {label}'] = group['Coinbase Premium %'] - group[f'Avg {label} Premium %']
             
             # Модифицируем расчет объемов
-            shifted_volume = group['volume_coinbase'].shift(1)
+            shifted_volume = group['volume_coinbase'].shift(-1)
             
             group['Avg 1H Volume'] = (
                 shifted_volume
                 .rolling(window='60min', min_periods=1)
-                .mean()
+                .median()
             )
             
             group['Avg 24H Volume'] = (
                 shifted_volume
                 .rolling(window='1D', min_periods=1)
-                .mean()
+                .median()
             )
             
             group['Avg 1M Volume'] = (
                 shifted_volume
                 .rolling(window='30D', min_periods=1)
-                .mean()
+                .median()
             )
             
             group['Avg 1Y Volume'] = (
                 shifted_volume
                 .rolling(window='365D', min_periods=1)
-                .mean()
+                .median()
             )
             
             group['Coinbase Volume Diff %'] = (
-                (group['volume_coinbase'] - group['Avg 1H Volume']) / group['Avg 1H Volume'] * 100
+                (shifted_volume - group['Avg 1H Volume']) / group['Avg 1H Volume'] * 100
             )
             
             # Перепишем таблицу с нужной структурой

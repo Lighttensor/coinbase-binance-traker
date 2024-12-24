@@ -119,7 +119,10 @@ class BinanceDataFetcher:
         if not end_time:
             end_time = datetime.now(timezone.utc)
         if not start_time:
-            start_time = end_time - timedelta(days=1)
+            # Получаем дату ровно год назад
+            start_time = datetime.now(timezone.utc) - timedelta(days=365)
+            # Устанавливаем время на начало дня
+            start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
 
         if not self.target_pairs:
             print("No target pairs specified")
